@@ -1,0 +1,16 @@
+{
+  "name": "clipper-local-ai-ad-generator",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "cd backend && .venv\\Scripts\\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "test:backend": "cd backend && .venv\\Scripts\\python -m pytest -q",
+    "build:frontend": "npm --prefix frontend run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
+
