@@ -1,14 +1,17 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { assetUrl, generateStoryboard, generateT2V, listProjectAssets, pollJob } from "../lib/api";
-import type { Asset, PlatformTarget, RenderMode } from "../types/api";
+import { assetUrl, generateStoryboard, generateT2V, listProjectAssets, listProjects, pollJob } from "../lib/api";
+import { recordUsage } from "../lib/pricingBlueprint";
+import type { Asset, PlatformTarget, Project, RenderMode } from "../types/api";
 
 const CURRENT_PROJECT_KEY = "clipper_current_project_id";
 
 export function VideoPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState(localStorage.getItem(CURRENT_PROJECT_KEY) ?? "");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("Generate storyboard or T2V video.");
+  const [status, setStatus] = useState("Step 5: generate storyboard video or text-to-video.");
 
   const [storyboardForm, setStoryboardForm] = useState({
     duration_sec: 15,
@@ -27,12 +30,28 @@ export function VideoPage() {
   });
 
   useEffect(() => {
+    void refreshProjects();
+  }, []);
+
+  useEffect(() => {
     if (!projectId) {
       return;
     }
     localStorage.setItem(CURRENT_PROJECT_KEY, projectId);
     void refreshAssets(projectId);
   }, [projectId]);
+
+  async function refreshProjects() {
+    try {
+      const result = await listProjects();
+      setProjects(result.projects);
+      if (!projectId && result.projects.length > 0) {
+        setProjectId(result.projects[0].id);
+      }
+    } catch (error) {
+      setStatus(`Failed to load projects: ${(error as Error).message}`);
+    }
+  }
 
   async function refreshAssets(targetProjectId: string) {
     try {
@@ -45,7 +64,7 @@ export function VideoPage() {
 
   async function runStoryboard() {
     if (!projectId) {
-      setStatus("Set active project ID first.");
+      setStatus("Select a project first.");
       return;
     }
     setBusy(true);
@@ -55,6 +74,10 @@ export function VideoPage() {
       const result = await pollJob(queued.job_id, (job) =>
         setStatus(`Storyboard ${job.status}: ${job.stage} (${job.progress_pct}%)`),
       );
+      if (result.job.status !== "done") {
+        throw new Error(`Storyboard job ended as '${result.job.status}'.`);
+      }
+      recordUsage("video_jobs");
       setStatus(`Storyboard job finished: ${result.job.status}`);
       await refreshAssets(projectId);
     } catch (error) {
@@ -66,7 +89,7 @@ export function VideoPage() {
 
   async function runT2V() {
     if (!projectId) {
-      setStatus("Set active project ID first.");
+      setStatus("Select a project first.");
       return;
     }
     setBusy(true);
@@ -76,7 +99,16 @@ export function VideoPage() {
       const result = await pollJob(queued.job_id, (job) =>
         setStatus(`T2V ${job.status}: ${job.stage} (${job.progress_pct}%)`),
       );
-      setStatus(`T2V job finished: ${result.job.status}`);
+      if (result.job.status !== "done") {
+        throw new Error(`T2V job ended as '${result.job.status}'.`);
+      }
+      recordUsage("t2v_jobs");
+      const fallbackUsed = Boolean(result.job.result?.fallback_used);
+      if (fallbackUsed) {
+        setStatus("T2V ended in fallback storyboard mode (real video model unavailable/failed).");
+      } else {
+        setStatus("T2V job finished with local video model.");
+      }
       await refreshAssets(projectId);
     } catch (error) {
       setStatus(`T2V generation failed: ${(error as Error).message}`);
@@ -90,21 +122,38 @@ export function VideoPage() {
   return (
     <div className="page-grid">
       <section className="panel">
-        <h2>Video Jobs</h2>
+        <h2>Step 5: Video Generation</h2>
+        <p className="small-note">Start with Storyboard for reliable results, then try T2V.</p>
+
         <label>
-          Active Project ID
-          <input
-            value={projectId}
-            onChange={(event) => setProjectId(event.target.value)}
-            placeholder="Paste project ID"
-          />
+          Active Project
+          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+            <option value="">Select project</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
         </label>
-        <button disabled={busy || !projectId} type="button" onClick={() => void refreshAssets(projectId)}>
-          Refresh Assets
-        </button>
+
+        <div className="inline-actions">
+          <button disabled={busy || !projectId} type="button" onClick={() => void refreshAssets(projectId)}>
+            Refresh Assets
+          </button>
+          <button disabled={busy} type="button" onClick={() => void refreshProjects()}>
+            Refresh Projects
+          </button>
+        </div>
+
+        {!projectId ? (
+          <p className="small-note">
+            No project selected. Create one in <Link to="/">Project</Link> first.
+          </p>
+        ) : null}
 
         <div className="form-grid">
-          <h3>Storyboard (V1)</h3>
+          <h3>Storyboard (recommended)</h3>
           <label>
             Style Prompt
             <textarea
@@ -155,15 +204,15 @@ export function VideoPage() {
             </select>
           </label>
           <label>
-            Mode
+            Quality
             <select
               value={storyboardForm.mode}
               onChange={(event) =>
                 setStoryboardForm({ ...storyboardForm, mode: event.target.value as RenderMode })
               }
             >
-              <option value="draft">Draft</option>
-              <option value="hq">HQ</option>
+              <option value="draft">Draft (faster)</option>
+              <option value="hq">HQ (better quality)</option>
             </select>
           </label>
           <button disabled={busy} type="button" onClick={() => void runStoryboard()}>
@@ -172,7 +221,7 @@ export function VideoPage() {
         </div>
 
         <div className="form-grid">
-          <h3>Text-to-Video (V2)</h3>
+          <h3>Text-to-Video (experimental)</h3>
           <label>
             Prompt
             <textarea
@@ -204,17 +253,17 @@ export function VideoPage() {
             </select>
           </label>
           <label>
-            Mode
+            Quality
             <select
               value={t2vForm.mode}
               onChange={(event) => setT2VForm({ ...t2vForm, mode: event.target.value as RenderMode })}
             >
-              <option value="draft">Draft</option>
-              <option value="hq">HQ</option>
+              <option value="draft">Draft (faster)</option>
+              <option value="hq">HQ (better quality)</option>
             </select>
           </label>
           <button disabled={busy} type="button" onClick={() => void runT2V()}>
-            Generate T2V
+            Generate Text-to-Video
           </button>
         </div>
       </section>
@@ -236,4 +285,3 @@ export function VideoPage() {
     </div>
   );
 }
-

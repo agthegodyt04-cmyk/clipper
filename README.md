@@ -59,6 +59,9 @@ cd d:\clipper\clipper
 2. Set `REPO_URL` in the first code cell.
 3. Run cells top-to-bottom.
 4. Copy `PUBLIC_API_URL` and paste it into the app header `API URL` field, then click `Use API`.
+5. To prevent placeholder images, set in Colab backend start cell:
+   - `os.environ["CLIPPER_STRICT_REAL_IMAGE"] = "1"`
+   - `os.environ["CLIPPER_STRICT_REAL_INPAINT"] = "1"`
 
 ## Backend Tests
 

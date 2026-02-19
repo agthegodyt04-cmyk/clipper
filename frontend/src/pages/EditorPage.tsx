@@ -1,11 +1,14 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BrushCanvas, type BrushCanvasRef } from "../components/BrushCanvas";
-import { assetUrl, inpaintImage, listProjectAssets, pollJob, uploadAsset } from "../lib/api";
-import type { Asset, RenderMode } from "../types/api";
+import { assetUrl, inpaintImage, listProjectAssets, listProjects, pollJob, uploadAsset } from "../lib/api";
+import { recordUsage } from "../lib/pricingBlueprint";
+import type { Asset, Project, RenderMode } from "../types/api";
 
 const CURRENT_PROJECT_KEY = "clipper_current_project_id";
 
 export function EditorPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState(localStorage.getItem(CURRENT_PROJECT_KEY) ?? "");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedImageAssetId, setSelectedImageAssetId] = useState("");
@@ -13,8 +16,12 @@ export function EditorPage() {
   const [strength, setStrength] = useState(0.6);
   const [mode, setMode] = useState<RenderMode>("draft");
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("Select an image and paint the mask.");
+  const [status, setStatus] = useState("Step 4: choose an image, paint over the area, then apply inpaint.");
   const brushRef = useRef<BrushCanvasRef>(null);
+
+  useEffect(() => {
+    void refreshProjects();
+  }, []);
 
   useEffect(() => {
     if (!projectId) {
@@ -23,6 +30,18 @@ export function EditorPage() {
     localStorage.setItem(CURRENT_PROJECT_KEY, projectId);
     void refreshAssets(projectId);
   }, [projectId]);
+
+  async function refreshProjects() {
+    try {
+      const result = await listProjects();
+      setProjects(result.projects);
+      if (!projectId && result.projects.length > 0) {
+        setProjectId(result.projects[0].id);
+      }
+    } catch (error) {
+      setStatus(`Failed to load projects: ${(error as Error).message}`);
+    }
+  }
 
   async function refreshAssets(targetProjectId: string) {
     try {
@@ -42,7 +61,7 @@ export function EditorPage() {
 
   async function onRunInpaint() {
     if (!projectId || !selectedImageAssetId) {
-      setStatus("Set active project and select an image.");
+      setStatus("Select a project and image first.");
       return;
     }
     if (!brushRef.current) {
@@ -51,12 +70,13 @@ export function EditorPage() {
     }
 
     setBusy(true);
-    setStatus("Exporting mask...");
+    setStatus("Exporting brush mask...");
     try {
       const maskBlob = await brushRef.current.exportMaskBlob();
       if (!maskBlob) {
         throw new Error("Mask export failed.");
       }
+
       const maskFile = new File([maskBlob], "mask.png", { type: "image/png" });
       const upload = await uploadAsset(projectId, "mask", maskFile);
 
@@ -69,9 +89,19 @@ export function EditorPage() {
         strength,
       });
       const finished = await pollJob(queued.job_id, (job) =>
-        setStatus(`Inpaint job ${job.status}: ${job.stage} (${job.progress_pct}%)`),
+        setStatus(`Inpaint ${job.status}: ${job.stage} (${job.progress_pct}%)`),
       );
-      setStatus(`Inpaint finished: ${finished.job.status}`);
+      if (finished.job.status !== "done") {
+        throw new Error(`Inpaint job ended as '${finished.job.status}'.`);
+      }
+      recordUsage("inpaint_jobs");
+      const imageAsset = finished.assets.find((asset) => asset.kind === "image");
+      const engine = String(imageAsset?.meta?.engine ?? "unknown");
+      if (engine === "pillow_fallback") {
+        setStatus("Inpaint used placeholder renderer. Real inpaint model failed.");
+      } else {
+        setStatus(`Inpaint finished (${engine}).`);
+      }
       await refreshAssets(projectId);
       brushRef.current.clear();
     } catch (error) {
@@ -84,24 +114,37 @@ export function EditorPage() {
   return (
     <div className="page-grid">
       <section className="panel">
-        <h2>Brush Editor</h2>
+        <h2>Step 4: Brush Editor</h2>
+        <p className="small-note">Paint white over the area you want changed.</p>
         <label>
-          Active Project ID
-          <input
-            value={projectId}
-            onChange={(event) => setProjectId(event.target.value)}
-            placeholder="Paste project ID"
-          />
+          Active Project
+          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+            <option value="">Select project</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
         </label>
-        <button disabled={!projectId || busy} type="button" onClick={() => void refreshAssets(projectId)}>
-          Refresh Assets
-        </button>
+        <div className="inline-actions">
+          <button disabled={!projectId || busy} type="button" onClick={() => void refreshAssets(projectId)}>
+            Refresh Assets
+          </button>
+          <button disabled={busy} type="button" onClick={() => void refreshProjects()}>
+            Refresh Projects
+          </button>
+        </div>
+
+        {!projectId ? (
+          <p className="small-note">
+            No project selected. Create one in <Link to="/">Project</Link> first.
+          </p>
+        ) : null}
+
         <label>
           Base Image
-          <select
-            value={selectedImageAssetId}
-            onChange={(event) => setSelectedImageAssetId(event.target.value)}
-          >
+          <select value={selectedImageAssetId} onChange={(event) => setSelectedImageAssetId(event.target.value)}>
             <option value="">Select image asset</option>
             {imageAssets.map((asset) => (
               <option key={asset.id} value={asset.id}>
@@ -110,10 +153,24 @@ export function EditorPage() {
             ))}
           </select>
         </label>
+
+        <button
+          disabled={busy || !imageAssets.length}
+          type="button"
+          onClick={() => {
+            if (imageAssets.length > 0) {
+              setSelectedImageAssetId(imageAssets[0].id);
+            }
+          }}
+        >
+          Use Latest Image
+        </button>
+
         <label>
           Edit Prompt
           <textarea value={editPrompt} onChange={(event) => setEditPrompt(event.target.value)} />
         </label>
+
         <label>
           Strength: {strength.toFixed(2)}
           <input
@@ -125,13 +182,15 @@ export function EditorPage() {
             onChange={(event) => setStrength(Number(event.target.value))}
           />
         </label>
+
         <label>
           Mode
           <select value={mode} onChange={(event) => setMode(event.target.value as RenderMode)}>
-            <option value="draft">Draft</option>
-            <option value="hq">HQ</option>
+            <option value="draft">Draft (faster)</option>
+            <option value="hq">HQ (better quality)</option>
           </select>
         </label>
+
         <div className="inline-actions">
           <button disabled={busy || !selectedImage} type="button" onClick={() => void onRunInpaint()}>
             Apply Inpaint
@@ -140,6 +199,7 @@ export function EditorPage() {
             Clear Mask
           </button>
         </div>
+
         <p className="status">{status}</p>
       </section>
 

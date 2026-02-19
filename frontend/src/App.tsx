@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { getApiBase, resetApiBase, setApiBase } from "./lib/api";
+import { PricingBlueprintPage } from "./pages/PricingBlueprintPage";
 import { EditorPage } from "./pages/EditorPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { VideoPage } from "./pages/VideoPage";
@@ -27,7 +28,7 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <h1>Clipper Local AI Ad Studio</h1>
-        <p>Free local ad copy, image generation, brush edits, and video ads.</p>
+        <p>Simple flow: 1) Project 2) Generate 3) Brush edit 4) Video export.</p>
         <div className="api-config">
           <label>
             API URL
@@ -47,10 +48,11 @@ function App() {
         </div>
         <nav className="app-nav">
           <NavLink to="/" end>
-            Project
+            1. Project
           </NavLink>
-          <NavLink to="/editor">Editor</NavLink>
-          <NavLink to="/video">Video</NavLink>
+          <NavLink to="/editor">2. Editor</NavLink>
+          <NavLink to="/video">3. Video</NavLink>
+          <NavLink to="/pricing">4. Pricing</NavLink>
         </nav>
       </header>
       <main className="app-main">
@@ -58,6 +60,7 @@ function App() {
           <Route path="/" element={<ProjectPage />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/video" element={<VideoPage />} />
+          <Route path="/pricing" element={<PricingBlueprintPage />} />
         </Routes>
       </main>
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
+  assetUrl,
   createProject,
   generateCopy,
   generateImage,
@@ -7,6 +8,7 @@ import {
   listProjects,
   pollJob,
 } from "../lib/api";
+import { recordUsage } from "../lib/pricingBlueprint";
 import type { Asset, PlatformTarget, Project, RenderMode } from "../types/api";
 
 const CURRENT_PROJECT_KEY = "clipper_current_project_id";
@@ -15,7 +17,7 @@ export function ProjectPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("Create a project to start.");
+  const [status, setStatus] = useState("Step 1: create a project.");
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => localStorage.getItem(CURRENT_PROJECT_KEY) ?? "");
 
   const [projectForm, setProjectForm] = useState({
@@ -47,6 +49,8 @@ export function ProjectPage() {
     () => projects.find((item) => item.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   );
+  const imageAssets = useMemo(() => assets.filter((asset) => asset.kind === "image"), [assets]);
+  const copyAssets = useMemo(() => assets.filter((asset) => asset.kind === "copy"), [assets]);
 
   useEffect(() => {
     void refreshProjects();
@@ -86,7 +90,14 @@ export function ProjectPage() {
     setBusy(true);
     setStatus("Creating project...");
     try {
-      const result = await createProject(projectForm);
+      const payload = {
+        ...projectForm,
+        name: projectForm.name.trim() || "My Campaign",
+        brand_name: projectForm.brand_name.trim() || projectForm.name.trim() || "My Brand",
+        offer: projectForm.offer.trim() || "launch offer",
+        tone: projectForm.tone.trim() || "bold",
+      };
+      const result = await createProject(payload);
       setStatus(`Project created: ${result.project.name}`);
       await refreshProjects();
       setSelectedProjectId(result.project_id);
@@ -113,6 +124,10 @@ export function ProjectPage() {
       const finished = await pollJob(queued.job_id, (job) =>
         setStatus(`Copy job ${job.status}: ${job.stage} (${job.progress_pct}%)`),
       );
+      if (finished.job.status !== "done") {
+        throw new Error(`Copy job ended as '${finished.job.status}'.`);
+      }
+      recordUsage("copy_jobs");
       setStatus(`Copy job finished: ${finished.job.status}`);
       await refreshAssets(selectedProjectId);
     } catch (error) {
@@ -130,9 +145,12 @@ export function ProjectPage() {
     setBusy(true);
     setStatus("Queueing image generation...");
     try {
+      const prompt =
+        imageForm.prompt.trim() ||
+        `Cinematic product ad photo of ${selectedProject?.product ?? "the product"} with premium lighting`;
       const queued = await generateImage({
         project_id: selectedProjectId,
-        prompt: imageForm.prompt,
+        prompt,
         negative_prompt: imageForm.negative_prompt,
         platform: imageForm.platform,
         mode: imageForm.mode,
@@ -141,7 +159,17 @@ export function ProjectPage() {
       const finished = await pollJob(queued.job_id, (job) =>
         setStatus(`Image job ${job.status}: ${job.stage} (${job.progress_pct}%)`),
       );
-      setStatus(`Image job finished: ${finished.job.status}`);
+      if (finished.job.status !== "done") {
+        throw new Error(`Image job ended as '${finished.job.status}'.`);
+      }
+      recordUsage("image_jobs");
+      const imageAsset = finished.assets.find((asset) => asset.kind === "image");
+      const engine = String(imageAsset?.meta?.engine ?? "unknown");
+      if (engine === "pillow_fallback") {
+        setStatus("Image finished with placeholder renderer. Real model failed. Check model setup.");
+      } else {
+        setStatus(`Image job finished (${engine}).`);
+      }
       await refreshAssets(selectedProjectId);
     } catch (error) {
       setStatus(`Image generation failed: ${(error as Error).message}`);
@@ -150,10 +178,66 @@ export function ProjectPage() {
     }
   }
 
+  async function onQuickGenerate() {
+    if (!selectedProjectId) {
+      setStatus("Create/select a project first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      setStatus("Quick ad: generating copy (step 1/2)...");
+      const copyJob = await generateCopy({
+        project_id: selectedProjectId,
+        ...copyForm,
+      });
+      const copyResult = await pollJob(copyJob.job_id, (job) =>
+        setStatus(`Copy ${job.status}: ${job.stage} (${job.progress_pct}%)`),
+      );
+      if (copyResult.job.status !== "done") {
+        throw new Error(`Copy job ended as '${copyResult.job.status}'.`);
+      }
+      recordUsage("copy_jobs");
+
+      setStatus("Quick ad: generating image (step 2/2)...");
+      const prompt =
+        imageForm.prompt.trim() ||
+        `Cinematic product ad photo of ${selectedProject?.product ?? "the product"} with premium lighting`;
+      const imageJob = await generateImage({
+        project_id: selectedProjectId,
+        prompt,
+        negative_prompt: imageForm.negative_prompt,
+        platform: imageForm.platform,
+        mode: imageForm.mode,
+        seed: imageForm.seed ? Number(imageForm.seed) : undefined,
+      });
+      const imageResult = await pollJob(imageJob.job_id, (job) =>
+        setStatus(`Image ${job.status}: ${job.stage} (${job.progress_pct}%)`),
+      );
+      if (imageResult.job.status !== "done") {
+        throw new Error(`Image job ended as '${imageResult.job.status}'.`);
+      }
+      recordUsage("image_jobs");
+      const imageAsset = imageResult.assets.find((asset) => asset.kind === "image");
+      const engine = String(imageAsset?.meta?.engine ?? "unknown");
+
+      if (engine === "pillow_fallback") {
+        setStatus("Quick ad finished, but image used placeholder renderer. Fix model setup for real output.");
+      } else {
+        setStatus("Quick ad finished. You can now go to Editor or Video.");
+      }
+      await refreshAssets(selectedProjectId);
+    } catch (error) {
+      setStatus(`Quick ad failed: ${(error as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="page-grid">
       <section className="panel">
-        <h2>Project</h2>
+        <h2>Step 1: Project Setup</h2>
+        <p className="small-note">Fill this once. We remember your active project automatically.</p>
         <form onSubmit={onCreateProject} className="form-grid">
           <label>
             Project Name
@@ -198,11 +282,11 @@ export function ProjectPage() {
             />
           </label>
           <button disabled={busy} type="submit">
-            Create Project
+            Save Project
           </button>
         </form>
         <label className="select-label">
-          Active Project
+          Active Project (auto-used in all tabs)
           <select
             value={selectedProjectId}
             onChange={(event) => setSelectedProjectId(event.target.value)}
@@ -217,14 +301,23 @@ export function ProjectPage() {
           </select>
         </label>
         {selectedProject ? (
-          <p className="small-note">
-            {selectedProject.brand_name} | {selectedProject.product} | tone: {selectedProject.tone}
-          </p>
+          <>
+            <p className="small-note">
+              {selectedProject.brand_name} | {selectedProject.product} | tone: {selectedProject.tone}
+            </p>
+            <p className="small-note">Project ID: {selectedProject.id}</p>
+          </>
         ) : null}
       </section>
 
       <section className="panel">
-        <h2>Copy + Image Jobs</h2>
+        <h2>Step 2: Generate Ad Assets</h2>
+        <p className="small-note">Use Draft for speed. Use HQ for better quality.</p>
+        <div className="inline-actions">
+          <button disabled={busy || !selectedProjectId} type="button" onClick={() => void onQuickGenerate()}>
+            1-Click: Copy + Image
+          </button>
+        </div>
         <div className="form-grid">
           <h3>Copy</h3>
           <label>
@@ -262,7 +355,7 @@ export function ProjectPage() {
             </select>
           </label>
           <button disabled={busy} type="button" onClick={() => void onGenerateCopy()}>
-            Generate Copy
+            Generate Copy Only
           </button>
         </div>
 
@@ -272,6 +365,7 @@ export function ProjectPage() {
             Prompt
             <textarea
               value={imageForm.prompt}
+              placeholder="Leave blank to auto-create from product."
               onChange={(event) => setImageForm({ ...imageForm, prompt: event.target.value })}
             />
           </label>
@@ -313,15 +407,48 @@ export function ProjectPage() {
             />
           </label>
           <button disabled={busy} type="button" onClick={() => void onGenerateImage()}>
-            Generate Image
+            Generate Image Only
           </button>
         </div>
       </section>
 
       <section className="panel panel-wide">
-        <h2>Project Assets</h2>
+        <h2>Step 3: Results</h2>
         <p className="status">{status}</p>
         {assets.length === 0 ? <p>No assets yet.</p> : null}
+        {imageAssets.length > 0 ? (
+          <>
+            <h3>Latest Images</h3>
+            <div className="asset-grid">
+              {imageAssets.slice(0, 8).map((asset) => (
+                <article key={asset.id} className="asset-card">
+                  <img className="asset-thumb" src={assetUrl(asset.id)} alt={`asset-${asset.id}`} />
+                  <p className="small-note">{asset.id.slice(0, 8)}</p>
+                  <p className="small-note">engine: {String(asset.meta?.engine ?? "unknown")}</p>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        {copyAssets.length > 0 ? (
+          <>
+            <h3>Copy Files</h3>
+            <div className="asset-grid">
+              {copyAssets.slice(0, 4).map((asset) => (
+                <article key={asset.id} className="asset-card">
+                  <p>
+                    <strong>copy</strong>
+                  </p>
+                  <p className="small-note">{asset.id.slice(0, 8)}</p>
+                  <p className="small-note">{asset.path.split(/[/\\]/).slice(-2).join("/")}</p>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        {assets.length > 0 ? <h3>All Assets</h3> : null}
         <div className="asset-grid">
           {assets.map((asset) => (
             <article key={asset.id} className="asset-card">

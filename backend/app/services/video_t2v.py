@@ -20,6 +20,7 @@ class TextToVideoService:
         self.model_manager = model_manager
         self.storyboard_service = storyboard_service
         self._video_pipeline = None
+        self._video_device = "cpu"
 
     def generate_or_fallback(
         self,
@@ -101,6 +102,7 @@ class TextToVideoService:
             "video_path": str(video_path),
             "frame_paths": [str(path) for path in frame_paths],
             "frame_count": len(frame_paths),
+            "device": self._video_device,
             "model_dir": str(model_dir),
         }
 
@@ -126,12 +128,14 @@ class TextToVideoService:
         try:
             import torch  # type: ignore
 
+            self._video_device = "cuda" if torch.cuda.is_available() else "cpu"
+            torch_dtype = torch.float16 if self._video_device == "cuda" else torch.float32
             pipe = DiffusionPipeline.from_pretrained(
                 str(model_dir),
-                torch_dtype=torch.float32,
+                torch_dtype=torch_dtype,
                 local_files_only=True,
             )
-            pipe.to("cpu")
+            pipe.to(self._video_device)
             pipe.set_progress_bar_config(disable=True)
             self._video_pipeline = pipe
             return self._video_pipeline
