@@ -45,6 +45,7 @@ cd d:\clipper\clipper
 ```
 
 Note: true local text-to-video still depends on downloading large video models and suitable hardware.
+If you previously installed older V2 deps, reinstall with `requirements-v2.txt` to avoid diffusers/transformers mismatch fallback.
 
 ## Download Real Models
 
