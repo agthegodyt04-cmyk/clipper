@@ -4,10 +4,13 @@ import type {
   CreateProjectPayload,
   GenerateCopyPayload,
   GenerateImagePayload,
+  ImproveImagePromptPayload,
+  ImproveImagePromptResponse,
   InpaintPayload,
   Job,
   Project,
   StoryboardPayload,
+  SystemCapabilities,
   T2VPayload,
 } from "../types/api";
 
@@ -79,6 +82,10 @@ export async function listProjects(): Promise<{ projects: Project[] }> {
   return request("/api/v1/projects");
 }
 
+export async function getSystemCapabilities(): Promise<SystemCapabilities> {
+  return request("/api/v1/system/capabilities");
+}
+
 export async function generateCopy(payload: GenerateCopyPayload): Promise<{ job_id: string; status: string }> {
   return request("/api/v1/copy/generate", {
     method: "POST",
@@ -89,6 +96,16 @@ export async function generateCopy(payload: GenerateCopyPayload): Promise<{ job_
 
 export async function generateImage(payload: GenerateImagePayload): Promise<{ job_id: string; status: string }> {
   return request("/api/v1/images/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function improveImagePrompt(
+  payload: ImproveImagePromptPayload,
+): Promise<ImproveImagePromptResponse> {
+  return request("/api/v1/images/improve-prompt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

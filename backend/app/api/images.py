@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.schemas import ImageGenerateRequest, ImageInpaintRequest
+from app.schemas import ImageGenerateRequest, ImageInpaintRequest, ImagePromptImproveRequest
+from app.services.prompt_enhancer import PromptEnhancer
 
 from .common import get_queue, get_repo, ok
 
@@ -25,6 +26,23 @@ async def queue_image_generation(request: Request, payload: ImageGenerateRequest
     )
     await queue.enqueue(job["id"])
     return ok({"job_id": job["id"], "status": job["status"]})
+
+
+@router.post("/images/improve-prompt")
+async def improve_image_prompt(request: Request, payload: ImagePromptImproveRequest) -> dict:
+    repo = get_repo(request)
+    project = repo.get_project(payload.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"project_id '{payload.project_id}' was not found")
+
+    enhancer = PromptEnhancer()
+    result = enhancer.improve(
+        project=project,
+        prompt=payload.prompt,
+        platform=payload.platform,
+        mode=payload.mode,
+    )
+    return ok(result)
 
 
 @router.post("/images/inpaint")
@@ -51,4 +69,3 @@ async def queue_image_inpaint(request: Request, payload: ImageInpaintRequest) ->
     )
     await queue.enqueue(job["id"])
     return ok({"job_id": job["id"], "status": job["status"]})
-

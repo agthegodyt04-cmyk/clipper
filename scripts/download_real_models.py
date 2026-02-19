@@ -37,7 +37,40 @@ def download_text_model(model_root: Path) -> Path:
     return Path(out_path)
 
 
-def download_image_model(model_root: Path) -> Path:
+def download_image_fast_sdxl_turbo(model_root: Path) -> Path:
+    image_dir = model_root / "image" / "sdxl-turbo"
+    _ensure_dir(image_dir)
+    snapshot_download(
+        repo_id="stabilityai/sdxl-turbo",
+        local_dir=str(image_dir),
+        local_dir_use_symlinks=False,
+    )
+    return image_dir
+
+
+def download_image_hq_sdxl_base(model_root: Path) -> Path:
+    image_dir = model_root / "image" / "sdxl-base"
+    _ensure_dir(image_dir)
+    snapshot_download(
+        repo_id="stabilityai/stable-diffusion-xl-base-1.0",
+        local_dir=str(image_dir),
+        local_dir_use_symlinks=False,
+    )
+    return image_dir
+
+
+def download_inpaint_hq_sdxl(model_root: Path) -> Path:
+    inpaint_dir = model_root / "inpaint" / "sdxl-inpaint"
+    _ensure_dir(inpaint_dir)
+    snapshot_download(
+        repo_id="diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+        local_dir=str(inpaint_dir),
+        local_dir_use_symlinks=False,
+    )
+    return inpaint_dir
+
+
+def download_legacy_image_model(model_root: Path) -> Path:
     image_dir = model_root / "image" / "sd-turbo"
     _ensure_dir(image_dir)
     snapshot_download(
@@ -48,7 +81,7 @@ def download_image_model(model_root: Path) -> Path:
     return image_dir
 
 
-def download_inpaint_model(model_root: Path) -> Path:
+def download_legacy_inpaint_model(model_root: Path) -> Path:
     inpaint_dir = model_root / "inpaint" / "sd-inpaint"
     _ensure_dir(inpaint_dir)
     snapshot_download(
@@ -73,11 +106,26 @@ def download_video_model(model_root: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download real local models for Clipper.")
     parser.add_argument("--model-path", default="D:/AIModels")
+    all_targets = [
+        "text",
+        "image_fast_sdxl_turbo",
+        "image_hq_sdxl_base",
+        "inpaint_hq_sdxl",
+        "legacy_sd_turbo",
+        "legacy_sd_inpaint",
+        "image",
+        "inpaint",
+        "video",
+    ]
     parser.add_argument(
         "--targets",
         nargs="+",
-        default=["text", "image", "inpaint", "video"],
-        choices=["text", "image", "inpaint", "video"],
+        default=[
+            "image_fast_sdxl_turbo",
+            "image_hq_sdxl_base",
+            "inpaint_hq_sdxl",
+        ],
+        choices=all_targets,
     )
     args = parser.parse_args()
 
@@ -86,8 +134,14 @@ def main() -> None:
 
     actions = {
         "text": download_text_model,
-        "image": download_image_model,
-        "inpaint": download_inpaint_model,
+        "image_fast_sdxl_turbo": download_image_fast_sdxl_turbo,
+        "image_hq_sdxl_base": download_image_hq_sdxl_base,
+        "inpaint_hq_sdxl": download_inpaint_hq_sdxl,
+        "legacy_sd_turbo": download_legacy_image_model,
+        "legacy_sd_inpaint": download_legacy_inpaint_model,
+        # Backward-compat aliases.
+        "image": download_legacy_image_model,
+        "inpaint": download_legacy_inpaint_model,
         "video": download_video_model,
     }
 
@@ -113,4 +167,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

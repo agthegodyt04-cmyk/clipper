@@ -51,7 +51,13 @@ If you previously installed older V2 deps, reinstall with `requirements-v2.txt` 
 
 ```powershell
 cd d:\clipper\clipper
-.\backend\.venv\Scripts\python .\scripts\download_real_models.py --model-path D:/AIModels --targets text image inpaint video
+.\backend\.venv\Scripts\python .\scripts\download_real_models.py --model-path D:/AIModels --targets image_fast_sdxl_turbo image_hq_sdxl_base inpaint_hq_sdxl
+```
+
+Legacy fallback models (optional):
+
+```powershell
+.\backend\.venv\Scripts\python .\scripts\download_real_models.py --model-path D:/AIModels --targets legacy_sd_turbo legacy_sd_inpaint
 ```
 
 ## Run On Colab
@@ -63,6 +69,8 @@ cd d:\clipper\clipper
 5. To prevent placeholder images, set in Colab backend start cell:
    - `os.environ["CLIPPER_STRICT_REAL_IMAGE"] = "1"`
    - `os.environ["CLIPPER_STRICT_REAL_INPAINT"] = "1"`
+6. Verify runtime/model status:
+   - `GET /api/v1/system/capabilities`
 
 ## Backend Tests
 

@@ -6,16 +6,16 @@ from pathlib import Path
 
 STARTER_NOTES = [
     "Starter profile (~8-12GB target):",
-    "1) Small GGUF instruct model for copy generation (optional fallback exists).",
-    "2) Lightweight text-to-image model checkpoint.",
-    "3) Inpaint checkpoint.",
+    "1) SDXL Turbo draft image model (image/sdxl-turbo).",
+    "2) SDXL Base HQ image model (image/sdxl-base).",
+    "3) SDXL Inpaint HQ model (inpaint/sdxl-inpaint).",
 ]
 
 FULL_NOTES = [
     "Full profile (~20-35GB target):",
-    "1) Larger GGUF instruct model.",
-    "2) Higher quality image/inpaint checkpoints.",
-    "3) Optional local text-to-video model prep artifacts.",
+    "1) SDXL draft + HQ + inpaint models.",
+    "2) Legacy SD Turbo and SD inpaint fallback models.",
+    "3) Optional local text/video model prep artifacts.",
 ]
 
 
@@ -29,7 +29,12 @@ def main() -> None:
     (model_root / ".cache").mkdir(parents=True, exist_ok=True)
     (model_root / "text").mkdir(parents=True, exist_ok=True)
     (model_root / "image").mkdir(parents=True, exist_ok=True)
+    (model_root / "image" / "sdxl-turbo").mkdir(parents=True, exist_ok=True)
+    (model_root / "image" / "sdxl-base").mkdir(parents=True, exist_ok=True)
+    (model_root / "image" / "sd-turbo").mkdir(parents=True, exist_ok=True)
     (model_root / "inpaint").mkdir(parents=True, exist_ok=True)
+    (model_root / "inpaint" / "sdxl-inpaint").mkdir(parents=True, exist_ok=True)
+    (model_root / "inpaint" / "sd-inpaint").mkdir(parents=True, exist_ok=True)
     (model_root / "video").mkdir(parents=True, exist_ok=True)
 
     notes = STARTER_NOTES if args.profile == "starter" else FULL_NOTES
@@ -54,4 +59,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

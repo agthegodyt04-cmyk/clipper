@@ -48,6 +48,13 @@ class ImageGenerateRequest(BaseModel):
     seed: int | None = None
 
 
+class ImagePromptImproveRequest(BaseModel):
+    project_id: str
+    prompt: str = Field(default="", max_length=400)
+    platform: PlatformTarget = "9:16"
+    mode: RenderMode = "draft"
+
+
 class ImageInpaintRequest(BaseModel):
     project_id: str
     image_asset_id: str
@@ -78,4 +85,3 @@ class VideoT2VRequest(BaseModel):
 class AssetUploadResponse(BaseModel):
     asset_id: str
     path: str
-

@@ -37,7 +37,7 @@ if ($InstallV2Stack) {
 }
 
 if ($DownloadRealModels) {
-    & ".\.venv\Scripts\python.exe" "$root\scripts\download_real_models.py" --model-path $ModelPath --targets text image inpaint video
+    & ".\.venv\Scripts\python.exe" "$root\scripts\download_real_models.py" --model-path $ModelPath --targets image_fast_sdxl_turbo image_hq_sdxl_base inpaint_hq_sdxl legacy_sd_turbo legacy_sd_inpaint
 }
 
 Set-Location $root

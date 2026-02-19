@@ -14,6 +14,31 @@ export interface ApiEnvelope<T> {
   error: ApiError | null;
 }
 
+export interface SystemCapabilities {
+  gpu: {
+    available: boolean;
+    name: string | null;
+    vram_gb: number | null;
+    cuda: string | null;
+  };
+  models: {
+    image_fast_sdxl_turbo: boolean;
+    image_hq_sdxl_base: boolean;
+    inpaint_hq_sdxl: boolean;
+    legacy_sd_turbo: boolean;
+    legacy_sd_inpaint: boolean;
+  };
+  defaults: {
+    draft_model: string;
+    hq_model: string;
+    hq_inpaint_model: string;
+  };
+  strict: {
+    real_image: boolean;
+    real_inpaint: boolean;
+  };
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -77,6 +102,19 @@ export interface GenerateImagePayload {
   seed?: number;
 }
 
+export interface ImproveImagePromptPayload {
+  project_id: string;
+  prompt: string;
+  platform: PlatformTarget;
+  mode: RenderMode;
+}
+
+export interface ImproveImagePromptResponse {
+  prompt: string;
+  negative_prompt: string;
+  notes: string[];
+}
+
 export interface InpaintPayload {
   project_id: string;
   image_asset_id: string;
@@ -103,4 +141,3 @@ export interface T2VPayload {
   platform: PlatformTarget;
   mode: RenderMode;
 }
-

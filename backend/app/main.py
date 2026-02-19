@@ -14,6 +14,7 @@ from app.api import (
     images_router,
     jobs_router,
     projects_router,
+    system_router,
     videos_router,
 )
 from app.config import ensure_dirs, get_settings
@@ -62,6 +63,7 @@ app.add_middleware(
 app.include_router(projects_router)
 app.include_router(copy_router)
 app.include_router(images_router)
+app.include_router(system_router)
 app.include_router(videos_router)
 app.include_router(jobs_router)
 app.include_router(assets_router)

@@ -4,12 +4,14 @@ import {
   createProject,
   generateCopy,
   generateImage,
+  getSystemCapabilities,
+  improveImagePrompt,
   listProjectAssets,
   listProjects,
   pollJob,
 } from "../lib/api";
 import { recordUsage } from "../lib/pricingBlueprint";
-import type { Asset, PlatformTarget, Project, RenderMode } from "../types/api";
+import type { Asset, PlatformTarget, Project, RenderMode, SystemCapabilities } from "../types/api";
 
 const CURRENT_PROJECT_KEY = "clipper_current_project_id";
 
@@ -18,6 +20,8 @@ export function ProjectPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Step 1: create a project.");
+  const [capabilities, setCapabilities] = useState<SystemCapabilities | null>(null);
+  const [capabilityError, setCapabilityError] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => localStorage.getItem(CURRENT_PROJECT_KEY) ?? "");
 
   const [projectForm, setProjectForm] = useState({
@@ -54,6 +58,7 @@ export function ProjectPage() {
 
   useEffect(() => {
     void refreshProjects();
+    void refreshCapabilities();
   }, []);
 
   useEffect(() => {
@@ -82,6 +87,16 @@ export function ProjectPage() {
       setAssets(result.assets);
     } catch (error) {
       setStatus(`Failed to load assets: ${(error as Error).message}`);
+    }
+  }
+
+  async function refreshCapabilities() {
+    try {
+      const result = await getSystemCapabilities();
+      setCapabilities(result);
+      setCapabilityError("");
+    } catch (error) {
+      setCapabilityError((error as Error).message);
     }
   }
 
@@ -173,6 +188,33 @@ export function ProjectPage() {
       await refreshAssets(selectedProjectId);
     } catch (error) {
       setStatus(`Image generation failed: ${(error as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onImproveImagePrompt() {
+    if (!selectedProjectId) {
+      setStatus("Select a project first.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Improving prompt for better image quality...");
+    try {
+      const result = await improveImagePrompt({
+        project_id: selectedProjectId,
+        prompt: imageForm.prompt,
+        platform: imageForm.platform,
+        mode: imageForm.mode,
+      });
+      setImageForm((prev) => ({
+        ...prev,
+        prompt: result.prompt,
+        negative_prompt: result.negative_prompt,
+      }));
+      setStatus("Prompt improved. Generate image again.");
+    } catch (error) {
+      setStatus(`Prompt improvement failed: ${(error as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -312,10 +354,31 @@ export function ProjectPage() {
 
       <section className="panel">
         <h2>Step 2: Generate Ad Assets</h2>
-        <p className="small-note">Use Draft for speed. Use HQ for better quality.</p>
+        <p className="small-note">Draft uses fast SDXL Turbo. HQ uses max-quality SDXL Base.</p>
+        {capabilities ? (
+          <div className="status">
+            <p className="small-note">
+              System Status: {capabilities.gpu.available ? "GPU detected" : "CPU mode"} | draft model:{" "}
+              {capabilities.defaults.draft_model} | HQ model: {capabilities.defaults.hq_model}
+            </p>
+            {!capabilities.models.image_hq_sdxl_base ? (
+              <p className="small-note">
+                HQ SDXL model missing. Download:
+                `python scripts/download_real_models.py --model-path D:/AIModels --targets image_fast_sdxl_turbo image_hq_sdxl_base inpaint_hq_sdxl`
+              </p>
+            ) : null}
+          </div>
+        ) : capabilityError ? (
+          <p className="small-note">System Status unavailable: {capabilityError}</p>
+        ) : (
+          <p className="small-note">Loading system status...</p>
+        )}
         <div className="inline-actions">
           <button disabled={busy || !selectedProjectId} type="button" onClick={() => void onQuickGenerate()}>
             1-Click: Copy + Image
+          </button>
+          <button disabled={busy} type="button" onClick={() => void refreshCapabilities()}>
+            Refresh System Status
           </button>
         </div>
         <div className="form-grid">
@@ -350,8 +413,8 @@ export function ProjectPage() {
               value={copyForm.mode}
               onChange={(event) => setCopyForm({ ...copyForm, mode: event.target.value as RenderMode })}
             >
-              <option value="draft">Draft</option>
-              <option value="hq">HQ</option>
+              <option value="draft">Draft (Fast)</option>
+              <option value="hq">HQ (Enhanced)</option>
             </select>
           </label>
           <button disabled={busy} type="button" onClick={() => void onGenerateCopy()}>
@@ -369,6 +432,11 @@ export function ProjectPage() {
               onChange={(event) => setImageForm({ ...imageForm, prompt: event.target.value })}
             />
           </label>
+          <div className="inline-actions">
+            <button disabled={busy} type="button" onClick={() => void onImproveImagePrompt()}>
+              Improve Prompt (AI)
+            </button>
+          </div>
           <label>
             Negative Prompt
             <input
@@ -395,8 +463,8 @@ export function ProjectPage() {
               value={imageForm.mode}
               onChange={(event) => setImageForm({ ...imageForm, mode: event.target.value as RenderMode })}
             >
-              <option value="draft">Draft</option>
-              <option value="hq">HQ</option>
+              <option value="draft">Draft (Fast SDXL Turbo)</option>
+              <option value="hq">HQ (Max SDXL)</option>
             </select>
           </label>
           <label>
@@ -425,6 +493,10 @@ export function ProjectPage() {
                   <img className="asset-thumb" src={assetUrl(asset.id)} alt={`asset-${asset.id}`} />
                   <p className="small-note">{asset.id.slice(0, 8)}</p>
                   <p className="small-note">engine: {String(asset.meta?.engine ?? "unknown")}</p>
+                  <p className="small-note">model: {String(asset.meta?.model_key ?? "unknown")}</p>
+                  <p className="small-note">steps: {String(asset.meta?.steps ?? "n/a")}</p>
+                  <p className="small-note">guidance: {String(asset.meta?.guidance_scale ?? "n/a")}</p>
+                  <p className="small-note">device: {String(asset.meta?.device ?? "unknown")}</p>
                 </article>
               ))}
             </div>

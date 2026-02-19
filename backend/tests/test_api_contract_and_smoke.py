@@ -36,6 +36,28 @@ def test_contract_and_core_pipeline(client: TestClient) -> None:
     assert payload["ok"] is True
     project_id = payload["data"]["project_id"]
 
+    caps_resp = client.get("/api/v1/system/capabilities")
+    assert caps_resp.status_code == 200
+    caps_data = caps_resp.json()["data"]
+    assert "gpu" in caps_data
+    assert "models" in caps_data
+    assert "defaults" in caps_data
+    assert "strict" in caps_data
+
+    improve_prompt_resp = client.post(
+        "/api/v1/images/improve-prompt",
+        json={
+            "project_id": project_id,
+            "prompt": "cinematic product image of a smart bottle",
+            "platform": "1:1",
+            "mode": "hq",
+        },
+    )
+    assert improve_prompt_resp.status_code == 200
+    improve_data = improve_prompt_resp.json()["data"]
+    assert "prompt" in improve_data and improve_data["prompt"]
+    assert "negative_prompt" in improve_data and improve_data["negative_prompt"]
+
     copy_job_resp = client.post(
         "/api/v1/copy/generate",
         json={
@@ -66,6 +88,10 @@ def test_contract_and_core_pipeline(client: TestClient) -> None:
     image_result = _wait_for_job(client, image_job_id)
     assert image_result["data"]["job"]["status"] == "done"
     image_asset_id = image_result["data"]["assets"][0]["id"]
+    image_meta = image_result["data"]["assets"][0]["meta"]
+    assert "model_key" in image_meta
+    assert "scheduler" in image_meta
+    assert "retry_count" in image_meta
 
     # Create a simple white mask image and upload.
     from PIL import Image
@@ -114,4 +140,3 @@ def test_contract_and_core_pipeline(client: TestClient) -> None:
     video_job_id = video_resp.json()["data"]["job_id"]
     video_result = _wait_for_job(client, video_job_id, timeout_sec=120)
     assert video_result["data"]["job"]["status"] in {"done", "error"}
-
